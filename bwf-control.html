@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BWF Control Room</title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Share+Tech+Mono&family=Noto+Sans+Thai:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --gold:#FFD600;--blue:#001f6b;--dark:#05060f;--panel:#090c1a;
+  --in:#00FF88;--out:#FF2D55;--line:#4fc3f7;--border:rgba(255,214,0,0.18);--ai:#bf5fff;
+}
+html,body{height:100%;overflow:hidden;background:var(--dark);color:#e8f0ff;font-family:'Noto Sans Thai',sans-serif}
+
+/* HEADER */
+header{display:flex;align-items:center;justify-content:space-between;padding:8px 18px;height:46px;background:rgba(0,0,0,0.85);border-bottom:2px solid var(--gold);position:relative;z-index:100;flex-shrink:0}
+.logo-title{font-family:'Bebas Neue';font-size:19px;letter-spacing:3px;color:var(--gold)}
+.logo-sub{font-size:9px;letter-spacing:2px;opacity:.35;text-transform:uppercase}
+.hdr-center{position:absolute;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px}
+.cpills{display:flex;gap:4px}
+.cpill{font-family:'Bebas Neue';font-size:9px;letter-spacing:1px;padding:3px 7px;border-radius:3px;border:1px solid;transition:all .3s}
+.cpill.off{border-color:rgba(255,255,255,0.1);color:rgba(255,255,255,0.2)}
+.cpill.on{border-color:rgba(0,255,136,0.5);color:var(--in);background:rgba(0,255,136,0.08)}
+.ai-badge{display:flex;align-items:center;gap:5px;font-family:'Share Tech Mono';font-size:10px;padding:3px 10px;border-radius:20px;border:1px solid rgba(191,95,255,0.4);color:var(--ai)}
+.ai-dot{width:6px;height:6px;border-radius:50%;background:var(--ai)}
+.ai-dot.pulse{animation:blink .8s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+#clock{font-family:'Share Tech Mono';font-size:11px;opacity:.4}
+.ws-badge{font-family:'Share Tech Mono';font-size:10px;padding:3px 8px;border-radius:3px;border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.4)}
+.ws-badge.ok{border-color:rgba(0,255,136,0.4);color:var(--in)}
+
+/* WORKSPACE */
+#workspace{display:grid;grid-template-columns:1fr 1fr 280px;grid-template-rows:1fr 1fr;height:calc(100vh - 46px);gap:2px;background:#000}
+
+/* CAM CELLS */
+.cc{position:relative;overflow:hidden;background:#050810;cursor:pointer}
+.cc:hover{outline:2px solid rgba(255,214,0,0.3)}
+.cc.focused{outline:2px solid var(--gold);z-index:10}
+.cc.expanded{position:fixed;inset:46px 280px 0 0;z-index:50;outline:3px solid var(--gold)}
+.cc video{width:100%;height:100%;object-fit:cover;display:block}
+.cc canvas.ann{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.cc canvas.ann.drawing{pointer-events:all;cursor:crosshair}
+.cc canvas.aic{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.clabel{position:absolute;top:7px;left:7px;font-family:'Bebas Neue';font-size:12px;letter-spacing:2px;padding:3px 9px;border-radius:3px;background:rgba(0,0,0,0.65);border:1px solid rgba(255,214,0,0.3);color:var(--gold);pointer-events:none}
+.cst{position:absolute;top:7px;right:7px;font-family:'Share Tech Mono';font-size:9px;padding:3px 8px;border-radius:3px;pointer-events:none}
+.cst.wait{background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.3)}
+.cst.live{background:rgba(0,255,136,0.15);border:1px solid rgba(0,255,136,0.4);color:var(--in)}
+.nofeed{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;pointer-events:none}
+.nofeed-icon{font-size:32px;opacity:.15}
+.nofeed-txt{font-family:'Bebas Neue';font-size:13px;letter-spacing:2px;opacity:.15}
+.nofeed-pid{font-family:'Share Tech Mono';font-size:9px;opacity:.2}
+.ai-cbadge{position:absolute;bottom:36px;left:7px;font-family:'Bebas Neue';font-size:11px;letter-spacing:1px;padding:3px 8px;border-radius:4px;pointer-events:none;display:none}
+.ai-cbadge.show.in{display:block;background:rgba(0,255,136,0.2);border:1px solid rgba(0,255,136,0.5);color:var(--in)}
+.ai-cbadge.show.out{display:block;background:rgba(255,45,85,0.2);border:1px solid rgba(255,45,85,0.5);color:var(--out)}
+.rbar{position:absolute;bottom:0;left:0;right:0;display:none;flex-direction:column;gap:3px;padding:6px 10px;background:linear-gradient(0deg,rgba(0,0,0,0.85),transparent)}
+.rbar.show{display:flex}
+.rrow{display:flex;align-items:center;gap:7px}
+.rslider{flex:1;height:3px;background:rgba(255,255,255,0.15);border-radius:2px;-webkit-appearance:none;outline:none;cursor:pointer}
+.rslider::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;background:var(--gold);cursor:pointer}
+.rtime{font-family:'Share Tech Mono';font-size:9px;opacity:.5;white-space:nowrap}
+.rbtn{padding:3px 7px;border-radius:3px;background:rgba(255,255,255,0.1);border:none;color:#fff;font-size:11px;cursor:pointer}
+
+/* RIGHT PANEL */
+.rp{grid-column:3;grid-row:1/3;background:var(--panel);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;z-index:5}
+.rpsec{padding:10px 13px;border-bottom:1px solid rgba(255,255,255,0.06);flex-shrink:0}
+.rplbl{font-family:'Bebas Neue';font-size:11px;letter-spacing:2px;color:var(--gold);opacity:.6;margin-bottom:7px}
+
+/* AI VERDICT */
+.aivbox{border-radius:8px;padding:13px 11px;text-align:center;border:2px solid rgba(191,95,255,0.3);background:rgba(191,95,255,0.04);transition:all .3s;position:relative;overflow:hidden}
+.aivbox.ai-in{border-color:var(--in);background:rgba(0,255,136,0.07)}
+.aivbox.ai-out{border-color:var(--out);background:rgba(255,45,85,0.07)}
+.aivbox.scanning::after{content:'';position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--ai),transparent);animation:scan 1.2s infinite;top:0}
+@keyframes scan{0%{top:0}100%{top:100%}}
+.ai-tag{font-family:'Bebas Neue';font-size:9px;letter-spacing:2px;color:var(--ai);margin-bottom:4px;display:flex;align-items:center;justify-content:center;gap:5px}
+.ai-ricon{font-size:28px;margin-bottom:3px}
+.ai-rword{font-family:'Bebas Neue';font-size:28px;letter-spacing:4px}
+.ai-rword.inc{color:var(--in)}.ai-rword.outc{color:var(--out)}.ai-rword.pc{color:rgba(255,255,255,0.2)}
+.ai-conf{font-family:'Share Tech Mono';font-size:10px;margin-top:3px;opacity:.6}
+.ai-cam{font-size:9px;opacity:.35;margin-top:2px}
+.cbar-w{height:3px;background:rgba(255,255,255,0.08);border-radius:2px;margin:5px 0 2px;overflow:hidden}
+.cbar{height:100%;border-radius:2px;transition:width .5s;background:var(--ai)}
+.cbar.in-c{background:var(--in)}.cbar.out-c{background:var(--out)}
+.vact-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:7px}
+.vact{padding:8px 5px;border-radius:5px;font-family:'Bebas Neue';font-size:12px;letter-spacing:1px;cursor:pointer;border:1px solid transparent;text-align:center;transition:all .15s}
+.vact.conf{background:rgba(0,255,136,0.1);border-color:rgba(0,255,136,0.4);color:var(--in)}
+.vact.ovr-in{background:rgba(79,195,247,0.07);border-color:rgba(79,195,247,0.3);color:var(--line)}
+.vact.ovr-out{background:rgba(255,45,85,0.07);border-color:rgba(255,45,85,0.3);color:var(--out);grid-column:span 2}
+.vact:hover{filter:brightness(1.3);transform:scale(1.02)}
+.vact:disabled{opacity:.3;cursor:not-allowed;transform:none!important}
+
+/* Court mini */
+canvas#cmini{display:block;width:100%;border-radius:5px;cursor:crosshair;border:1px solid rgba(255,255,255,0.07);margin-top:5px}
+.calib-hint{font-size:9px;opacity:.35;text-align:center;margin-top:3px;line-height:1.5}
+
+/* Tools */
+.trow{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:5px}
+.tbtn{padding:4px 7px;border-radius:4px;font-size:11px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.55);cursor:pointer;transition:all .15s}
+.tbtn.active,.tbtn:hover{border-color:var(--line);color:var(--line);background:rgba(79,195,247,0.1)}
+.crow{display:flex;gap:4px;align-items:center}
+.cdot{width:16px;height:16px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:all .15s}
+.cdot.active{border-color:#fff;transform:scale(1.2)}
+
+/* Replay */
+.rcrow{display:flex;align-items:center;gap:5px;margin-bottom:4px}
+.rcbtn{padding:4px 8px;border-radius:4px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.6);font-size:11px;cursor:pointer;flex-shrink:0}
+.rcbtn:hover{border-color:var(--gold);color:var(--gold)}
+.rcslider{flex:1;height:3px;-webkit-appearance:none;background:rgba(255,255,255,0.1);border-radius:2px;outline:none;cursor:pointer}
+.rcslider::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;background:var(--gold);cursor:pointer}
+.rctime{font-family:'Share Tech Mono';font-size:10px;opacity:.4;white-space:nowrap}
+.spdrow{display:flex;gap:3px;flex-wrap:wrap}
+.spdbtn{padding:3px 6px;border-radius:3px;font-family:'Share Tech Mono';font-size:9px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.5);cursor:pointer}
+.spdbtn.active{border-color:var(--gold);color:var(--gold);background:rgba(255,214,0,0.08)}
+
+/* Log */
+.logscroll{flex:1;overflow-y:auto;padding:7px 12px}
+.loge{display:flex;align-items:center;gap:5px;padding:5px 6px;border-radius:4px;margin-bottom:3px;background:rgba(255,255,255,0.03);font-size:10px;animation:si .2s}
+@keyframes si{from{opacity:0;transform:translateX(5px)}to{opacity:1;transform:none}}
+.lbadge{font-family:'Bebas Neue';font-size:9px;padding:2px 6px;border-radius:3px;flex-shrink:0}
+.lbadge.in{background:rgba(0,255,136,0.15);color:var(--in)}
+.lbadge.out{background:rgba(255,45,85,0.15);color:var(--out)}
+.lbadge.ai-l{background:rgba(191,95,255,0.15);color:var(--ai)}
+.lbadge.ovr{background:rgba(255,214,0,0.15);color:var(--gold)}
+.ltxt{flex:1;opacity:.55}
+.lts{font-family:'Share Tech Mono';font-size:9px;opacity:.3}
+.lempty{text-align:center;opacity:.25;font-size:12px;padding:14px 0}
+
+/* Result flash */
+.resflash{position:fixed;inset:46px 280px 0 0;z-index:80;display:none;align-items:center;justify-content:center;pointer-events:none;flex-direction:column;gap:8px}
+.resflash.show{display:flex;animation:fi .4s cubic-bezier(.34,1.56,.64,1)}
+@keyframes fi{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:scale(1)}}
+.respill{font-family:'Bebas Neue';font-size:80px;letter-spacing:8px;padding:14px 50px;border-radius:12px;border:4px solid;text-shadow:0 0 50px currentColor}
+.respill.in{background:rgba(0,255,136,0.12);border-color:var(--in);color:var(--in)}
+.respill.out{background:rgba(255,45,85,0.12);border-color:var(--out);color:var(--out)}
+.res-src{font-family:'Share Tech Mono';font-size:11px;opacity:.5;letter-spacing:2px}
+
+/* Debug */
+#dlog{position:fixed;bottom:0;left:0;right:280px;background:rgba(0,0,0,0.8);font-family:monospace;font-size:9px;color:rgba(100,200,255,0.6);padding:4px 10px;max-height:55px;overflow-y:auto;z-index:90;line-height:1.8;display:none}
+#dtoggle{position:fixed;bottom:4px;right:285px;font-family:monospace;font-size:9px;background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.4);padding:2px 8px;border-radius:3px;cursor:pointer;z-index:91}
+
+::-webkit-scrollbar{width:3px}
+::-webkit-scrollbar-thumb{background:rgba(255,214,0,.2);border-radius:2px}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo-title">🏸 BWF HAWK-EYE + AI</div>
+    <div class="logo-sub">Local Network · WebRTC</div>
+  </div>
+  <div class="hdr-center">
+    <div class="cpills">
+      <div class="cpill off" id="pill-LEFT">LEFT</div>
+      <div class="cpill off" id="pill-RIGHT">RIGHT</div>
+      <div class="cpill off" id="pill-BACKL">BK-L</div>
+      <div class="cpill off" id="pill-BACKR">BK-R</div>
+    </div>
+    <div class="ai-badge"><span class="ai-dot pulse" id="ai-dot"></span><span id="ai-txt">AI: โหลด...</span></div>
+    <div class="ws-badge" id="ws-badge">WS: รอ...</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <div id="clock">—</div>
+  </div>
+</header>
+
+<div class="resflash" id="resflash">
+  <div class="respill" id="respill">IN</div>
+  <div class="res-src" id="res-src">AI CONFIRMED</div>
+</div>
+
+<div id="workspace">
+  <!-- LEFT -->
+  <div class="cc" id="cell-LEFT" data-pos="LEFT">
+    <video autoplay playsinline muted id="vid-LEFT"></video>
+    <canvas class="aic" id="aic-LEFT"></canvas>
+    <canvas class="ann" id="ann-LEFT"></canvas>
+    <div class="clabel">📷 LEFT</div>
+    <div class="cst wait" id="cst-LEFT">รอสัญญาณ</div>
+    <div class="nofeed" id="nf-LEFT"><div class="nofeed-icon">📷</div><div class="nofeed-txt">LEFT</div><div class="nofeed-pid" id="npid-LEFT">cam-left</div></div>
+    <div class="ai-cbadge" id="aib-LEFT"></div>
+    <div class="rbar" id="rb-LEFT"><div class="rrow"><button class="rbtn" id="rp-LEFT">▶</button><input type="range" class="rslider" id="rs-LEFT" min="0" max="100" value="0"><span class="rtime" id="rt-LEFT">0s</span><button class="rbtn" id="rsw-LEFT">0.5x</button></div></div>
+  </div>
+  <!-- RIGHT -->
+  <div class="cc" id="cell-RIGHT" data-pos="RIGHT">
+    <video autoplay playsinline muted id="vid-RIGHT"></video>
+    <canvas class="aic" id="aic-RIGHT"></canvas>
+    <canvas class="ann" id="ann-RIGHT"></canvas>
+    <div class="clabel">📷 RIGHT</div>
+    <div class="cst wait" id="cst-RIGHT">รอสัญญาณ</div>
+    <div class="nofeed" id="nf-RIGHT"><div class="nofeed-icon">📷</div><div class="nofeed-txt">RIGHT</div><div class="nofeed-pid" id="npid-RIGHT">cam-right</div></div>
+    <div class="ai-cbadge" id="aib-RIGHT"></div>
+    <div class="rbar" id="rb-RIGHT"><div class="rrow"><button class="rbtn" id="rp-RIGHT">▶</button><input type="range" class="rslider" id="rs-RIGHT" min="0" max="100" value="0"><span class="rtime" id="rt-RIGHT">0s</span><button class="rbtn" id="rsw-RIGHT">0.5x</button></div></div>
+  </div>
+  <!-- BACKL -->
+  <div class="cc" id="cell-BACKL" data-pos="BACKL">
+    <video autoplay playsinline muted id="vid-BACKL"></video>
+    <canvas class="aic" id="aic-BACKL"></canvas>
+    <canvas class="ann" id="ann-BACKL"></canvas>
+    <div class="clabel">📷 BACK-L</div>
+    <div class="cst wait" id="cst-BACKL">รอสัญญาณ</div>
+    <div class="nofeed" id="nf-BACKL"><div class="nofeed-icon">📷</div><div class="nofeed-txt">BACK-L</div><div class="nofeed-pid" id="npid-BACKL">cam-backl</div></div>
+    <div class="ai-cbadge" id="aib-BACKL"></div>
+    <div class="rbar" id="rb-BACKL"><div class="rrow"><button class="rbtn" id="rp-BACKL">▶</button><input type="range" class="rslider" id="rs-BACKL" min="0" max="100" value="0"><span class="rtime" id="rt-BACKL">0s</span><button class="rbtn" id="rsw-BACKL">0.5x</button></div></div>
+  </div>
+  <!-- BACKR -->
+  <div class="cc" id="cell-BACKR" data-pos="BACKR">
+    <video autoplay playsinline muted id="vid-BACKR"></video>
+    <canvas class="aic" id="aic-BACKR"></canvas>
+    <canvas class="ann" id="ann-BACKR"></canvas>
+    <div class="clabel">📷 BACK-R</div>
+    <div class="cst wait" id="cst-BACKR">รอสัญญาณ</div>
+    <div class="nofeed" id="nf-BACKR"><div class="nofeed-icon">📷</div><div class="nofeed-txt">BACK-R</div><div class="nofeed-pid" id="npid-BACKR">cam-backr</div></div>
+    <div class="ai-cbadge" id="aib-BACKR"></div>
+    <div class="rbar" id="rb-BACKR"><div class="rrow"><button class="rbtn" id="rp-BACKR">▶</button><input type="range" class="rslider" id="rs-BACKR" min="0" max="100" value="0"><span class="rtime" id="rt-BACKR">0s</span><button class="rbtn" id="rsw-BACKR">0.5x</button></div></div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="rp">
+    <!-- AI -->
+    <div class="rpsec">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">
+        <div class="rplbl" style="margin-bottom:0">🤖 AI VERDICT</div>
+        <div style="font-size:9px;opacity:.4;cursor:pointer" id="ai-toggle-lbl">AI: เปิด</div>
+      </div>
+      <div class="aivbox scanning" id="aivbox">
+        <div class="ai-tag"><span class="ai-dot pulse" id="aibox-dot"></span>HAWK-EYE AI</div>
+        <div class="ai-ricon" id="ai-icon">🔍</div>
+        <div class="ai-rword pc" id="ai-word">ANALYZING</div>
+        <div class="ai-conf" id="ai-conf">—</div>
+        <div class="cbar-w"><div class="cbar" id="cbar" style="width:0%"></div></div>
+        <div class="ai-cam" id="ai-cam">สแกนทุกกล้อง...</div>
+        <div class="vact-grid">
+          <button class="vact conf" id="btn-conf" disabled>✅ CONFIRM</button>
+          <button class="vact ovr-in" id="btn-ovr-in" disabled>✏️ IN</button>
+          <button class="vact ovr-out" id="btn-ovr-out" disabled>✏️ OVERRIDE OUT</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Court calibration -->
+    <div class="rpsec">
+      <div class="rplbl">📐 COURT BOUNDARY</div>
+      <canvas id="cmini" height="100"></canvas>
+      <div class="calib-hint" id="calib-hint">คลิก 4 มุมสนามเพื่อกำหนดขอบเขต AI</div>
+    </div>
+
+    <!-- Annotation -->
+    <div class="rpsec">
+      <div class="rplbl">✏️ DRAW</div>
+      <div class="trow">
+        <button class="tbtn active" data-tool="arrow">➡</button>
+        <button class="tbtn" data-tool="circle">⭕</button>
+        <button class="tbtn" data-tool="line">📏</button>
+        <button class="tbtn" data-tool="mark">📍</button>
+        <button class="tbtn" data-tool="none">🚫</button>
+        <button class="tbtn" id="clr-btn" style="margin-left:auto">🗑</button>
+      </div>
+      <div class="crow">
+        <div class="cdot active" style="background:#FFD600" data-color="#FFD600"></div>
+        <div class="cdot" style="background:#00FF88" data-color="#00FF88"></div>
+        <div class="cdot" style="background:#FF2D55" data-color="#FF2D55"></div>
+        <div class="cdot" style="background:#4fc3f7" data-color="#4fc3f7"></div>
+        <div class="cdot" style="background:#bf5fff" data-color="#bf5fff"></div>
+      </div>
+    </div>
+
+    <!-- Replay -->
+    <div class="rpsec">
+      <div class="rplbl">🎬 REPLAY</div>
+      <div class="rcrow">
+        <button class="rcbtn" id="rc-rew">⏮</button>
+        <button class="rcbtn" id="rc-play">▶</button>
+        <input type="range" class="rcslider" id="rc-seek" min="0" max="100" value="0">
+        <span class="rctime" id="rc-time">—</span>
+      </div>
+      <div class="rcrow" style="margin-top:3px">
+        <div class="spdrow">
+          <button class="spdbtn" data-spd="0.1">0.1x</button>
+          <button class="spdbtn" data-spd="0.25">0.25x</button>
+          <button class="spdbtn" data-spd="0.5">0.5x</button>
+          <button class="spdbtn active" data-spd="1">1x</button>
+        </div>
+        <button class="rcbtn" id="rc-fb" style="margin-left:auto">⏮1f</button>
+        <button class="rcbtn" id="rc-ff">1f⏭</button>
+      </div>
+    </div>
+
+    <!-- Log -->
+    <div class="rplbl" style="padding:6px 13px 0;flex-shrink:0">📋 LOG</div>
+    <div class="logscroll" id="logscroll"><div class="lempty">ยังไม่มีการตัดสิน</div></div>
+  </div>
+</div>
+
+<div id="dlog"></div>
+<button id="dtoggle">DEBUG</button>
+
+<script>
+const CAMS=['LEFT','RIGHT','BACKL','BACKR'];
+let ws=null, pcs={}, drawings={}, recChunks={};
+let drawTool='arrow', drawColor='#FFD600';
+let drawingNow=null, isDrawing=false, drawStart=null;
+let focusedCam=null, logCount=0, aiModel=null, aiEnabled=true;
+let courtCorners=[], lastAiV=null;
+CAMS.forEach(p=>{drawings[p]=[];recChunks[p]=[];pcs[p]=null});
+
+// debug
+let dbgOn=false;
+function dlog(m){document.getElementById('dlog').innerHTML+=m+'<br>';document.getElementById('dlog').scrollTop=9999}
+document.getElementById('dtoggle').addEventListener('click',()=>{dbgOn=!dbgOn;document.getElementById('dlog').style.display=dbgOn?'block':'none'});
+setInterval(()=>document.getElementById('clock').textContent=new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),1000);
+
+// ══ WEBSOCKET ══
+function connectWS(){
+  ws=new WebSocket('ws://localhost:3000');
+  ws.onopen=()=>{
+    dlog('✅ WS open');
+    document.getElementById('ws-badge').className='ws-badge ok';
+    document.getElementById('ws-badge').textContent='WS: เชื่อมแล้ว';
+    ws.send(JSON.stringify({type:'register',id:'control',role:'control'}));
+  };
+  ws.onmessage=async e=>{
+    const msg=JSON.parse(e.data);
+    if(msg.type==='camera-joined'){
+      dlog('📷 Camera joined: '+msg.pos);
+      callCamera(msg.id, msg.pos);
+    }
+    if(msg.type==='camera-left'){
+      const pos=msg.id.replace('cam-','').toUpperCase();
+      setCamSt(pos,'wait','หลุด');
+      document.getElementById('pill-'+pos).className='cpill off';
+      document.getElementById('nf-'+pos).style.display='flex';
+    }
+    if(msg.type==='answer'&&pcs[getPos(msg.from)]){
+      const pos=getPos(msg.from);
+      await pcs[pos].setRemoteDescription(new RTCSessionDescription(msg.answer));
+      dlog('✅ answer set: '+pos);
+    }
+    if(msg.type==='ice-candidate'){
+      const pos=getPos(msg.from);
+      if(pcs[pos])try{await pcs[pos].addIceCandidate(new RTCIceCandidate(msg.candidate))}catch(e){}
+    }
+  };
+  ws.onclose=()=>{
+    dlog('⚠️ WS หลุด เชื่อมใหม่...');
+    document.getElementById('ws-badge').textContent='WS: หลุด';
+    document.getElementById('ws-badge').className='ws-badge';
+    setTimeout(connectWS,2000);
+  };
+  ws.onerror=()=>{dlog('❌ WS error');setTimeout(connectWS,3000)};
+}
+
+function send(msg){if(ws&&ws.readyState===1)ws.send(JSON.stringify(msg))}
+function getPos(camId){return camId.replace('cam-','').toUpperCase()}
+
+// ══ WEBRTC ══
+async function callCamera(camId, pos){
+  if(pcs[pos]){pcs[pos].close()}
+  const pc=new RTCPeerConnection({iceServers:[
+    {urls:'stun:stun.l.google.com:19302'},
+    {urls:'stun:stun1.l.google.com:19302'},
+  ]});
+  pcs[pos]=pc;
+
+  pc.ontrack=e=>{
+    dlog('✅ stream: '+pos);
+    const vid=document.getElementById('vid-'+pos);
+    vid.srcObject=e.streams[0];
+    vid.play().catch(()=>{});
+    document.getElementById('nf-'+pos).style.display='none';
+    setCamSt(pos,'live','LIVE');
+    document.getElementById('pill-'+pos).className='cpill on';
+    startRec(pos,e.streams[0]);
+  };
+
+  pc.onicecandidate=e=>{
+    if(e.candidate) send({type:'ice-candidate',to:camId,candidate:e.candidate});
+  };
+
+  pc.onconnectionstatechange=()=>{
+    dlog('RTC '+pos+': '+pc.connectionState);
+    if(pc.connectionState==='failed'||pc.connectionState==='disconnected'){
+      setCamSt(pos,'wait','หลุด');
+      document.getElementById('pill-'+pos).className='cpill off';
+      setTimeout(()=>callCamera(camId,pos),3000);
+    }
+  };
+
+  // Dummy track to initiate
+  try{
+    const ac=new AudioContext();
+    const dest=ac.createMediaStreamDestination();
+    dest.stream.getTracks().forEach(t=>pc.addTrack(t,dest.stream));
+  }catch(e){pc.addTransceiver('video',{direction:'recvonly'})}
+
+  const offer=await pc.createOffer({offerToReceiveVideo:true,offerToReceiveAudio:false});
+  await pc.setLocalDescription(offer);
+  send({type:'offer',to:camId,offer});
+  dlog('📞 offer sent to '+camId);
+}
+
+function setCamSt(pos,type,txt){
+  const el=document.getElementById('cst-'+pos);
+  el.className='cst '+type;el.textContent=txt;
+}
+
+// ══ RECORDING ══
+function startRec(pos,stream){
+  if(!window.MediaRecorder)return;
+  const mime=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'].find(t=>MediaRecorder.isTypeSupported(t))||'';
+  try{
+    const mr=new MediaRecorder(stream,mime?{mimeType:mime}:{});
+    recChunks[pos]=[];
+    mr.ondataavailable=e=>{if(e.data.size>0){recChunks[pos].push(e.data);if(recChunks[pos].length>30)recChunks[pos].shift()}};
+    mr.start(1000);
+  }catch(e){dlog('rec err: '+e)}
+}
+function getReplay(pos){
+  const c=recChunks[pos];if(!c.length)return null;
+  const mime=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'].find(t=>MediaRecorder.isTypeSupported(t))||'video/webm';
+  return URL.createObjectURL(new Blob(c,{type:mime}));
+}
+
+// ══ AI ══
+async function loadAI(){
+  try{
+    aiModel=await cocoSsd.load();
+    document.getElementById('ai-txt').textContent='AI: พร้อม ✓';
+    document.getElementById('ai-dot').classList.remove('pulse');
+    document.getElementById('ai-dot').style.background='var(--in)';
+    setAiReady('AI พร้อม — รอตรวจจับลูก');
+    CAMS.forEach(p=>runAI(p));
+    dlog('✅ AI loaded');
+  }catch(e){
+    document.getElementById('ai-txt').textContent='AI: ❌';
+    dlog('❌ AI: '+e);
+  }
+}
+
+function runAI(pos){
+  const vid=document.getElementById('vid-'+pos);
+  const canvas=document.getElementById('aic-'+pos);
+  const ctx=canvas.getContext('2d');
+  async function loop(){
+    if(!aiModel||!aiEnabled){requestAnimationFrame(loop);return}
+    if(vid.readyState<2||vid.paused){requestAnimationFrame(loop);return}
+    if(canvas.width!==vid.videoWidth){canvas.width=vid.videoWidth||640;canvas.height=vid.videoHeight||480}
+    try{
+      const preds=await aiModel.detect(vid);
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      if(courtCorners.length===4)drawCourtOverlay(ctx,canvas);
+      const targets=preds.filter(p=>p.score>0.35);
+      let bestConf=lastAiV?.rawConf||0;
+      targets.forEach(p=>{
+        const[bx,by,bw,bh]=p.bbox;
+        const cx=bx+bw/2,cy=by+bh/2;
+        const conf=Math.round(p.score*100);
+        const inC=isInCourt(cx,cy,canvas.width,canvas.height);
+        const color=inC?'#00FF88':'#FF2D55';
+        ctx.strokeStyle=color;ctx.lineWidth=2;ctx.strokeRect(bx,by,bw,bh);
+        ctx.beginPath();ctx.arc(cx,cy,5,0,Math.PI*2);
+        ctx.fillStyle=color;ctx.shadowColor=color;ctx.shadowBlur=10;ctx.fill();ctx.shadowBlur=0;
+        ctx.fillStyle='rgba(0,0,0,0.65)';ctx.fillRect(bx,by-17,bw,15);
+        ctx.fillStyle=color;ctx.font='bold 10px monospace';
+        ctx.fillText(p.class+' '+conf+'% '+(inC?'IN':'OUT'),bx+2,by-5);
+        if(p.score>bestConf){
+          bestConf=p.score;
+          lastAiV={verdict:inC?'in':'out',conf,cam:pos,rawConf:p.score,cls:p.class};
+          updateAIPanel(lastAiV);
+          updateCellBadge(pos,inC?'in':'out',conf);
+        }
+      });
+    }catch(e){}
+    requestAnimationFrame(loop);
+  }
+  loop();
+}
+
+function drawCourtOverlay(ctx,canvas){
+  const mini=document.getElementById('cmini');
+  const sx=canvas.width/mini.offsetWidth,sy=canvas.height/mini.offsetHeight;
+  ctx.beginPath();
+  ctx.moveTo(courtCorners[0].x*sx,courtCorners[0].y*sy);
+  for(let i=1;i<4;i++)ctx.lineTo(courtCorners[i].x*sx,courtCorners[i].y*sy);
+  ctx.closePath();ctx.strokeStyle='rgba(255,214,0,0.5)';ctx.lineWidth=1.5;ctx.stroke();
+  ctx.fillStyle='rgba(255,214,0,0.04)';ctx.fill();
+}
+
+function isInCourt(cx,cy,w,h){
+  if(courtCorners.length<4)return cx>w*0.15&&cx<w*0.85&&cy>h*0.15&&cy<h*0.85;
+  const mini=document.getElementById('cmini');
+  const sx=w/mini.offsetWidth,sy=h/mini.offsetHeight;
+  const pts=courtCorners.map(p=>({x:p.x*sx,y:p.y*sy}));
+  let inside=false;
+  for(let i=0,j=pts.length-1;i<pts.length;j=i++){
+    if(((pts[i].y>cy)!==(pts[j].y>cy))&&(cx<(pts[j].x-pts[i].x)*(cy-pts[i].y)/(pts[j].y-pts[i].y)+pts[i].x))inside=!inside;
+  }
+  return inside;
+}
+
+function updateAIPanel(v){
+  const box=document.getElementById('aivbox');
+  box.className='aivbox '+(v.verdict==='in'?'ai-in':'ai-out');
+  document.getElementById('ai-icon').textContent=v.verdict==='in'?'✅':'❌';
+  document.getElementById('ai-word').textContent=v.verdict==='in'?'IN':'OUT';
+  document.getElementById('ai-word').className='ai-rword '+(v.verdict==='in'?'inc':'outc');
+  document.getElementById('ai-conf').textContent='CONFIDENCE: '+v.conf+'%';
+  document.getElementById('ai-cam').textContent='กล้อง: '+v.cam+' · '+v.cls;
+  document.getElementById('aibox-dot').classList.remove('pulse');
+  const cb=document.getElementById('cbar');
+  cb.style.width=v.conf+'%';
+  cb.className='cbar '+(v.verdict==='in'?'in-c':'out-c');
+  document.getElementById('btn-conf').disabled=false;
+  document.getElementById('btn-ovr-in').disabled=false;
+  document.getElementById('btn-ovr-out').disabled=false;
+}
+
+function setAiReady(sub){
+  document.getElementById('aivbox').className='aivbox scanning';
+  document.getElementById('ai-icon').textContent='🔍';
+  document.getElementById('ai-word').textContent='ANALYZING';
+  document.getElementById('ai-word').className='ai-rword pc';
+  document.getElementById('ai-conf').textContent=sub||'—';
+  document.getElementById('cbar').style.width='0%';
+  document.getElementById('btn-conf').disabled=true;
+  document.getElementById('btn-ovr-in').disabled=true;
+  document.getElementById('btn-ovr-out').disabled=true;
+  lastAiV=null;
+}
+
+function updateCellBadge(pos,v,conf){
+  const b=document.getElementById('aib-'+pos);
+  b.className='ai-cbadge show '+v;
+  b.textContent='🤖 '+v.toUpperCase()+' '+conf+'%';
+}
+
+document.getElementById('ai-toggle-lbl').addEventListener('click',()=>{
+  aiEnabled=!aiEnabled;
+  document.getElementById('ai-toggle-lbl').textContent='AI: '+(aiEnabled?'เปิด':'ปิด');
+  if(!aiEnabled)setAiReady('AI ปิดอยู่');
+});
+
+// confirm / override
+document.getElementById('btn-conf').addEventListener('click',()=>{if(lastAiV)commitV(lastAiV.verdict,'AI CONFIRMED',lastAiV.conf+'%')});
+document.getElementById('btn-ovr-in').addEventListener('click',()=>commitV('in','OVERRIDE','กรรมการแก้เป็น IN'));
+document.getElementById('btn-ovr-out').addEventListener('click',()=>commitV('out','OVERRIDE','กรรมการแก้เป็น OUT'));
+
+function commitV(v,src,detail){
+  const f=document.getElementById('resflash'),p=document.getElementById('respill'),s=document.getElementById('res-src');
+  p.textContent=v==='in'?'IN':'OUT';p.className='respill '+v;s.textContent=src;
+  f.className='resflash show';setTimeout(()=>f.className='resflash',2800);
+  logCount++;
+  const ls=document.getElementById('logscroll');
+  if(ls.querySelector('.lempty'))ls.innerHTML='';
+  const ts=new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const div=document.createElement('div');div.className='loge';
+  const sb=src==='OVERRIDE'?'ovr':'ai-l';
+  div.innerHTML=`<span class="lbadge ${v}">${v.toUpperCase()}</span><span class="lbadge ${sb}">${src}</span><span class="ltxt">${detail} · ${ts}</span><span class="lts">#${logCount}</span>`;
+  ls.prepend(div);
+  setTimeout(()=>{setAiReady('พร้อมรอบถัดไป');CAMS.forEach(p=>{document.getElementById('aib-'+p).className='ai-cbadge'})},3000);
+}
+
+// ══ COURT MINI ══
+function initCourtMini(){
+  const c=document.getElementById('cmini');
+  c.width=c.offsetWidth;c.height=100;drawCourtMini();
+  c.addEventListener('click',e=>{
+    if(courtCorners.length>=4)courtCorners=[];
+    const r=c.getBoundingClientRect();
+    courtCorners.push({x:e.clientX-r.left,y:e.clientY-r.top});
+    drawCourtMini();
+    document.getElementById('calib-hint').textContent=courtCorners.length<4?`คลิกมุมที่ ${courtCorners.length+1}/4`:'✅ กำหนดสนามแล้ว · คลิกรีเซ็ต';
+  });
+}
+
+function drawCourtMini(){
+  const c=document.getElementById('cmini'),ctx=c.getContext('2d');
+  if(!c.width)return;
+  ctx.clearRect(0,0,c.width,c.height);
+  ctx.fillStyle='#0a1a3a';ctx.fillRect(0,0,c.width,c.height);
+  const p=10,w=c.width-p*2,h=c.height-p*2;
+  ctx.strokeStyle='rgba(100,160,255,0.3)';ctx.lineWidth=1;ctx.strokeRect(p,p,w,h);
+  ctx.beginPath();ctx.moveTo(c.width/2,p);ctx.lineTo(c.width/2,p+h);ctx.stroke();
+  ctx.strokeStyle='rgba(255,214,0,0.4)';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(p,c.height/2);ctx.lineTo(p+w,c.height/2);ctx.stroke();
+  courtCorners.forEach((pt,i)=>{
+    ctx.beginPath();ctx.arc(pt.x,pt.y,5,0,Math.PI*2);
+    ctx.fillStyle='#bf5fff';ctx.shadowColor='#bf5fff';ctx.shadowBlur=8;ctx.fill();ctx.shadowBlur=0;
+    ctx.fillStyle='#fff';ctx.font='bold 8px monospace';ctx.fillText(i+1,pt.x+6,pt.y+4);
+  });
+  if(courtCorners.length===4){
+    ctx.beginPath();ctx.moveTo(courtCorners[0].x,courtCorners[0].y);
+    courtCorners.forEach(p=>ctx.lineTo(p.x,p.y));ctx.closePath();
+    ctx.strokeStyle='rgba(191,95,255,0.7)';ctx.lineWidth=1.5;ctx.stroke();
+    ctx.fillStyle='rgba(191,95,255,0.08)';ctx.fill();
+  }
+}
+
+// ══ CELL INTERACTION ══
+CAMS.forEach(pos=>{
+  resizeAnn(pos);
+  document.getElementById('cell-'+pos).addEventListener('click',()=>{
+    if(drawTool!=='none')return;
+    CAMS.forEach(p=>document.getElementById('cell-'+p).classList.remove('focused'));
+    document.getElementById('cell-'+pos).classList.add('focused');
+    focusedCam=pos;
+    const url=getReplay(pos);if(url)document.getElementById('rb-'+pos).classList.add('show');
+  });
+  document.getElementById('cell-'+pos).addEventListener('dblclick',()=>{
+    CAMS.forEach(p=>document.getElementById('cell-'+p).classList.remove('expanded'));
+    document.getElementById('cell-'+pos).classList.toggle('expanded');focusedCam=pos;
+  });
+  document.getElementById('rp-'+pos).addEventListener('click',()=>{
+    const url=getReplay(pos);if(!url)return;
+    const vid=document.getElementById('vid-'+pos);
+    if(vid.src!==url){vid.src=url;vid.load()}
+    if(vid.paused){vid.play();document.getElementById('rp-'+pos).textContent='⏸'}
+    else{vid.pause();document.getElementById('rp-'+pos).textContent='▶'}
+  });
+  document.getElementById('rs-'+pos).addEventListener('input',e=>{
+    const vid=document.getElementById('vid-'+pos);if(vid.duration)vid.currentTime=(e.target.value/100)*vid.duration;
+  });
+  document.getElementById('rsw-'+pos).addEventListener('click',()=>{
+    const vid=document.getElementById('vid-'+pos),btn=document.getElementById('rsw-'+pos);
+    vid.playbackRate=vid.playbackRate===1?0.25:1;btn.textContent=vid.playbackRate===1?'0.5x':'1x';
+  });
+  document.getElementById('vid-'+pos).addEventListener('timeupdate',()=>{
+    const vid=document.getElementById('vid-'+pos);if(!vid.duration)return;
+    document.getElementById('rs-'+pos).value=vid.currentTime/vid.duration*100;
+    document.getElementById('rt-'+pos).textContent=vid.currentTime.toFixed(1)+'s';
+  });
+  const ann=document.getElementById('ann-'+pos);
+  ann.addEventListener('pointerdown',e=>{if(drawTool==='none')return;e.preventDefault();isDrawing=true;drawStart=getPt(ann,e);drawingNow={type:drawTool,pts:[drawStart],color:drawColor,cam:pos}});
+  ann.addEventListener('pointermove',e=>{
+    if(!isDrawing||!drawingNow||drawingNow.cam!==pos)return;e.preventDefault();
+    const pt=getPt(ann,e);
+    drawingNow.type==='mark'?drawingNow.pts=[pt]:drawingNow.pts=[drawStart,pt];
+    redrawAnn(pos);drawShape(pos,drawingNow);
+  });
+  ann.addEventListener('pointerup',e=>{
+    if(!isDrawing||!drawingNow||drawingNow.cam!==pos)return;isDrawing=false;
+    const pt=getPt(ann,e);if(drawingNow.type!=='mark'&&drawingNow.pts.length<2)drawingNow.pts.push(pt);
+    drawings[pos].push({...drawingNow});drawingNow=null;redrawAnn(pos);
+  });
+});
+
+window.addEventListener('resize',()=>{CAMS.forEach(resizeAnn);drawCourtMini()});
+
+// Replay global
+document.getElementById('rc-play').addEventListener('click',()=>{
+  if(!focusedCam)return;const vid=document.getElementById('vid-'+focusedCam);
+  if(vid.paused){vid.play();document.getElementById('rc-play').textContent='⏸'}else{vid.pause();document.getElementById('rc-play').textContent='▶'}
+});
+document.getElementById('rc-rew').addEventListener('click',()=>{
+  if(!focusedCam)return;const url=getReplay(focusedCam);if(!url)return;
+  const vid=document.getElementById('vid-'+focusedCam);vid.src=url;vid.load();vid.play();document.getElementById('rc-play').textContent='⏸';
+});
+document.getElementById('rc-seek').addEventListener('input',e=>{
+  if(!focusedCam)return;const vid=document.getElementById('vid-'+focusedCam);if(vid.duration)vid.currentTime=(e.target.value/100)*vid.duration;
+});
+document.getElementById('rc-fb').addEventListener('click',()=>{if(focusedCam){const v=document.getElementById('vid-'+focusedCam);v.pause();v.currentTime=Math.max(0,v.currentTime-1/30)}});
+document.getElementById('rc-ff').addEventListener('click',()=>{if(focusedCam){const v=document.getElementById('vid-'+focusedCam);v.pause();v.currentTime=Math.min(v.duration||999,v.currentTime+1/30)}});
+document.querySelectorAll('[data-spd]').forEach(btn=>{
+  btn.addEventListener('click',()=>{document.querySelectorAll('[data-spd]').forEach(b=>b.classList.remove('active'));btn.classList.add('active');if(focusedCam)document.getElementById('vid-'+focusedCam).playbackRate=parseFloat(btn.dataset.spd)});
+});
+
+// Annotation tools
+document.querySelectorAll('[data-tool]').forEach(btn=>{
+  btn.addEventListener('click',()=>{drawTool=btn.dataset.tool;document.querySelectorAll('[data-tool]').forEach(b=>b.classList.remove('active'));btn.classList.add('active');CAMS.forEach(p=>{const a=document.getElementById('ann-'+p);drawTool!=='none'?a.classList.add('drawing'):a.classList.remove('drawing')})});
+});
+document.querySelectorAll('[data-color]').forEach(d=>{
+  d.addEventListener('click',()=>{drawColor=d.dataset.color;document.querySelectorAll('[data-color]').forEach(x=>x.classList.remove('active'));d.classList.add('active')});
+});
+document.getElementById('clr-btn').addEventListener('click',()=>CAMS.forEach(p=>{drawings[p]=[];redrawAnn(p)}));
+
+function resizeAnn(pos){
+  const ann=document.getElementById('ann-'+pos),cell=document.getElementById('cell-'+pos);
+  ann.width=cell.clientWidth;ann.height=cell.clientHeight;ann.style.width=cell.clientWidth+'px';ann.style.height=cell.clientHeight+'px';
+  const aic=document.getElementById('aic-'+pos);aic.style.width=cell.clientWidth+'px';aic.style.height=cell.clientHeight+'px';
+  redrawAnn(pos);
+}
+function getPt(ann,e){const r=ann.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}}
+function redrawAnn(pos){const ann=document.getElementById('ann-'+pos),c=ann.getContext('2d');c.clearRect(0,0,ann.width,ann.height);drawings[pos].forEach(d=>drawShape(pos,d))}
+function drawShape(pos,d){
+  const ann=document.getElementById('ann-'+pos),c=ann.getContext('2d');
+  c.save();c.strokeStyle=d.color;c.fillStyle=d.color;c.lineWidth=2.5;c.lineCap='round';c.shadowColor=d.color;c.shadowBlur=8;
+  if(d.type==='line'&&d.pts.length>=2){c.beginPath();c.moveTo(d.pts[0].x,d.pts[0].y);c.lineTo(d.pts[1].x,d.pts[1].y);c.stroke()}
+  else if(d.type==='arrow'&&d.pts.length>=2){
+    const[p0,p1]=d.pts;c.beginPath();c.moveTo(p0.x,p0.y);c.lineTo(p1.x,p1.y);c.stroke();
+    const a=Math.atan2(p1.y-p0.y,p1.x-p0.x),L=13;
+    c.beginPath();c.moveTo(p1.x,p1.y);c.lineTo(p1.x-L*Math.cos(a-.5),p1.y-L*Math.sin(a-.5));c.lineTo(p1.x-L*Math.cos(a+.5),p1.y-L*Math.sin(a+.5));c.closePath();c.fill();
+  }else if(d.type==='circle'&&d.pts.length>=2){
+    const dx=d.pts[1].x-d.pts[0].x,dy=d.pts[1].y-d.pts[0].y,r=Math.sqrt(dx*dx+dy*dy);
+    c.beginPath();c.arc(d.pts[0].x,d.pts[0].y,r,0,Math.PI*2);c.globalAlpha=.25;c.fill();c.globalAlpha=1;c.stroke();
+  }else if(d.type==='mark'&&d.pts[0]){
+    const p=d.pts[0];c.lineWidth=1.5;
+    c.beginPath();c.moveTo(p.x-13,p.y);c.lineTo(p.x+13,p.y);c.stroke();
+    c.beginPath();c.moveTo(p.x,p.y-13);c.lineTo(p.x,p.y+13);c.stroke();
+    c.beginPath();c.arc(p.x,p.y,5,0,Math.PI*2);c.fill();
+  }
+  c.restore();
+}
+
+// ══ INIT ══
+connectWS();
+loadAI();
+window.addEventListener('load',()=>{setTimeout(initCourtMini,100)});
+</script>
+</body>
+</html>

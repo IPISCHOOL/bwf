@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-fullscreen">
+<title>BWF Camera</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{--gold:#FFD600;--dark:#060810;--green:#00FF88;--red:#FF2D55}
+html{height:100%;overflow:hidden;position:fixed;width:100%}
+body{
+  height:100%;width:100%;overflow:hidden;position:fixed;
+  background:var(--dark);color:#e8f0ff;
+  font-family:-apple-system,'Noto Sans Thai',sans-serif;
+  user-select:none;-webkit-user-select:none;
+  touch-action:none;
+}
+
+/* ── SETUP ── */
+#setup{
+  position:fixed;inset:0;z-index:50;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;padding:env(safe-area-inset-top,20px) 20px 20px;
+  background:radial-gradient(ellipse at 50% 0%,rgba(0,48,135,0.6),var(--dark) 70%);
+  overflow:hidden;
+}
+.logo{font-family:'Arial Black',sans-serif;font-size:24px;letter-spacing:4px;color:var(--gold);text-align:center;font-weight:900}
+.logo-sub{font-size:10px;letter-spacing:2px;opacity:.4;text-transform:uppercase;text-align:center;margin-top:-10px}
+.field{width:100%;max-width:320px;display:flex;flex-direction:column;gap:4px}
+.field-label{font-size:10px;letter-spacing:1px;opacity:.4}
+.field-inp{
+  width:100%;background:rgba(255,255,255,0.07);
+  border:1px solid rgba(255,214,0,0.35);border-radius:10px;
+  padding:13px 16px;color:#fff;
+  font-size:18px;text-align:center;letter-spacing:3px;
+  outline:none;text-transform:uppercase;
+  -webkit-appearance:none;
+}
+.field-inp:focus{border-color:var(--gold)}
+.cam-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;max-width:320px}
+.cam-btn{
+  padding:13px 8px;border-radius:8px;
+  background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);
+  color:rgba(255,255,255,0.6);font-size:13px;font-weight:600;
+  cursor:pointer;text-align:center;line-height:1.5;
+  transition:all .15s;-webkit-appearance:none;
+}
+.cam-btn.selected{background:rgba(255,214,0,0.12);border-color:var(--gold);color:var(--gold)}
+.start-btn{
+  width:100%;max-width:320px;padding:15px;
+  background:linear-gradient(135deg,#001f6b,#1a56c4);
+  border:2px solid var(--gold);border-radius:10px;
+  color:var(--gold);font-size:18px;font-weight:900;letter-spacing:3px;
+  cursor:pointer;-webkit-appearance:none;
+}
+.start-btn:disabled{opacity:.35;cursor:not-allowed}
+#log-setup{
+  width:100%;max-width:320px;
+  background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.08);
+  border-radius:8px;padding:8px 12px;
+  font-size:10px;color:rgba(255,255,255,0.4);
+  max-height:80px;overflow-y:auto;line-height:1.9;
+  font-family:monospace;white-space:pre-wrap;
+}
+
+/* ── CAMERA SCREEN ── */
+#cam-screen{
+  display:none;position:fixed;inset:0;
+  background:#000;overflow:hidden;
+}
+#local-video{
+  position:absolute;inset:0;width:100%;height:100%;
+  object-fit:cover;display:block;
+}
+
+/* status top bar */
+.cam-top{
+  position:absolute;top:0;left:0;right:0;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:env(safe-area-inset-top,10px) 14px 10px;
+  background:linear-gradient(180deg,rgba(0,0,0,0.85) 0%,transparent 100%);
+  z-index:10;
+}
+.cam-lbl{font-size:16px;font-weight:900;letter-spacing:3px;color:var(--gold)}
+.st-badge{
+  display:flex;align-items:center;gap:5px;
+  font-size:10px;padding:4px 10px;border-radius:20px;border:1px solid;
+  font-family:monospace;
+}
+.st-badge.connecting{border-color:rgba(255,214,0,.4);color:var(--gold)}
+.st-badge.live{border-color:rgba(0,255,136,.5);color:var(--green)}
+.st-badge.error{border-color:rgba(255,45,85,.5);color:var(--red)}
+.st-dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:blink 1s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+
+/* bottom bar */
+.cam-btm{
+  position:absolute;bottom:0;left:0;right:0;
+  padding:0 14px env(safe-area-inset-bottom,14px);
+  background:linear-gradient(0deg,rgba(0,0,0,0.92) 0%,transparent 100%);
+  display:flex;flex-direction:column;gap:8px;
+  z-index:10;padding-top:20px;
+}
+.pid-box{
+  background:rgba(0,0,0,0.6);border:1px solid rgba(255,214,0,.25);
+  border-radius:8px;padding:8px 12px;
+  display:flex;align-items:center;gap:8px;
+}
+.pid-info{flex:1;min-width:0}
+.pid-lbl{font-size:9px;letter-spacing:1px;opacity:.4;margin-bottom:2px;font-family:monospace}
+.pid-val{font-size:12px;color:var(--gold);letter-spacing:1px;word-break:break-all;font-family:monospace}
+.copy-btn{
+  padding:5px 10px;border-radius:4px;flex-shrink:0;
+  background:rgba(255,214,0,.1);border:1px solid rgba(255,214,0,.35);
+  color:var(--gold);font-size:10px;cursor:pointer;
+}
+.ctrl-row{display:flex;gap:7px}
+.ctrl-btn{
+  flex:1;padding:12px;border-radius:8px;
+  background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);
+  color:rgba(255,255,255,.7);font-size:12px;font-weight:600;cursor:pointer;
+}
+.ctrl-btn.red{background:rgba(255,45,85,.15);border-color:rgba(255,45,85,.4);color:var(--red)}
+
+/* live log overlay */
+.live-log{
+  position:absolute;top:60px;left:10px;
+  font-size:9px;color:rgba(255,255,255,.25);line-height:1.8;
+  pointer-events:none;font-family:monospace;max-width:260px;
+}
+
+/* connection quality */
+.conn-quality{
+  position:absolute;bottom:160px;right:12px;
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  pointer-events:none;
+}
+.cq-bar{width:4px;border-radius:2px;background:rgba(255,255,255,.15)}
+.cq-bar.active{background:var(--green)}
+</style>
+</head>
+<body>
+
+<!-- SETUP -->
+<div id="setup">
+  <div>
+    <div class="logo">🏸 BWF CAMERA</div>
+    <div class="logo-sub">Phone Camera Unit · Local Network</div>
+  </div>
+
+  <div class="field">
+    <div class="field-label">IP คอมพิวเตอร์ (เช่น 192.168.1.5)</div>
+    <input class="field-inp" id="server-ip" placeholder="192.168.x.x" maxlength="20" inputmode="decimal">
+  </div>
+
+  <div style="width:100%;max-width:320px">
+    <div class="field-label" style="margin-bottom:8px">เลือกมุมกล้องของคุณ</div>
+    <div class="cam-grid">
+      <button class="cam-btn" data-pos="LEFT">📷 ซ้าย</button>
+      <button class="cam-btn" data-pos="RIGHT">📷 ขวา</button>
+      <button class="cam-btn" data-pos="BACKL">📷 หลังซ้าย</button>
+      <button class="cam-btn" data-pos="BACKR">📷 หลังขวา</button>
+    </div>
+  </div>
+
+  <button class="start-btn" id="start-btn" disabled>▶ เริ่มส่งสัญญาณ</button>
+  <div id="log-setup">รอการตั้งค่า...</div>
+</div>
+
+<!-- CAMERA -->
+<div id="cam-screen">
+  <video id="local-video" autoplay muted playsinline></video>
+
+  <div class="cam-top">
+    <div class="cam-lbl" id="cam-lbl">CAM: —</div>
+    <div class="st-badge connecting" id="st-badge">
+      <span class="st-dot"></span>
+      <span id="st-txt">เชื่อมต่อ...</span>
+    </div>
+  </div>
+
+  <div class="live-log" id="live-log"></div>
+
+  <div class="cam-btm">
+    <div class="pid-box">
+      <div class="pid-info">
+        <div class="pid-lbl">IP SERVER · แจ้งห้องควบคุม</div>
+        <div class="pid-val" id="pid-val">—</div>
+      </div>
+      <button class="copy-btn" id="copy-btn">คัดลอก</button>
+    </div>
+    <div class="ctrl-row">
+      <button class="ctrl-btn" id="flip-btn">🔄 สลับกล้อง</button>
+      <button class="ctrl-btn red" id="stop-btn">⏹ หยุด</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════
+//  STATE
+// ══════════════════════════════════
+let selectedPos=null, ws=null, pc=null, localStream=null;
+let facingMode='environment', serverIP='';
+let reconnectTimer=null, logLines=[];
+
+function log(msg){
+  const t=new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const line=t+' '+msg;
+  // setup log
+  const el=document.getElementById('log-setup');
+  if(el){el.textContent+='\n'+line;el.scrollTop=el.scrollHeight}
+  // live overlay
+  logLines.push(msg);if(logLines.length>6)logLines.shift();
+  const ll=document.getElementById('live-log');
+  if(ll)ll.innerHTML=logLines.join('<br>');
+  console.log('[BWF-CAM]',msg);
+}
+
+// ══════════════════════════════════
+//  SETUP
+// ══════════════════════════════════
+document.querySelectorAll('.cam-btn').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.cam-btn').forEach(x=>x.classList.remove('selected'));
+  b.classList.add('selected'); selectedPos=b.dataset.pos; checkReady();
+}));
+document.getElementById('server-ip').addEventListener('input',checkReady);
+function checkReady(){
+  const ip=document.getElementById('server-ip').value.trim();
+  document.getElementById('start-btn').disabled=!(ip.length>=7&&selectedPos);
+}
+
+document.getElementById('start-btn').addEventListener('click',startCam);
+
+async function startCam(){
+  serverIP=document.getElementById('server-ip').value.trim();
+  document.getElementById('setup').style.display='none';
+  document.getElementById('cam-screen').style.display='block';
+  document.getElementById('cam-lbl').textContent='CAM: '+selectedPos;
+  document.getElementById('pid-val').textContent='ws://'+serverIP+':3000';
+  log('เปิดกล้อง...');
+
+  // Request fullscreen
+  try{document.documentElement.requestFullscreen?.()}catch(e){}
+
+  // Get camera
+  try{
+    localStream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode,width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30}},
+      audio:false
+    });
+    document.getElementById('local-video').srcObject=localStream;
+    log('✅ กล้องพร้อม');
+  }catch(e){
+    setSt('error','กล้องไม่พร้อม');
+    log('❌ กล้อง: '+e.message);
+    return;
+  }
+
+  connectWS();
+}
+
+// ══════════════════════════════════
+//  WEBSOCKET
+// ══════════════════════════════════
+function connectWS(){
+  if(ws){try{ws.close()}catch(e){}}
+  setSt('connecting','เชื่อมต่อ server...');
+  log('เชื่อม ws://'+serverIP+':3000');
+
+  ws=new WebSocket('ws://'+serverIP+':3000');
+
+  ws.onopen=()=>{
+    log('✅ WebSocket เชื่อมแล้ว');
+    // Register
+    const id='cam-'+selectedPos.toLowerCase();
+    send({type:'register',id,role:'camera',pos:selectedPos});
+    setSt('connecting','รอห้องควบคุม...');
+  };
+
+  ws.onmessage=async(e)=>{
+    const msg=JSON.parse(e.data);
+
+    if(msg.type==='registered'){
+      log('✅ ลงทะเบียนแล้ว: '+msg.id);
+    }
+
+    // WebRTC signaling
+    if(msg.type==='offer'){
+      log('📞 ได้รับ offer จากห้องควบคุม');
+      await handleOffer(msg);
+    }
+    if(msg.type==='ice-candidate'&&pc){
+      try{await pc.addIceCandidate(new RTCIceCandidate(msg.candidate))}catch(e){}
+    }
+  };
+
+  ws.onclose=()=>{
+    log('⚠️ WebSocket หลุด กำลังเชื่อมใหม่...');
+    setSt('connecting','กำลังเชื่อมใหม่...');
+    clearTimeout(reconnectTimer);
+    reconnectTimer=setTimeout(connectWS,2000);
+  };
+
+  ws.onerror=e=>{
+    log('❌ WS error');
+    setSt('error','เชื่อมไม่ได้');
+  };
+}
+
+function send(msg){
+  if(ws&&ws.readyState===1) ws.send(JSON.stringify(msg));
+}
+
+// ══════════════════════════════════
+//  WEBRTC
+// ══════════════════════════════════
+async function handleOffer(msg){
+  if(pc){pc.close();pc=null}
+
+  pc=new RTCPeerConnection({
+    iceServers:[
+      {urls:'stun:stun.l.google.com:19302'},
+      {urls:'stun:stun1.l.google.com:19302'},
+    ]
+  });
+
+  // Add local stream
+  localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
+
+  pc.onicecandidate=e=>{
+    if(e.candidate){
+      send({type:'ice-candidate',to:msg.from,candidate:e.candidate});
+    }
+  };
+
+  pc.onconnectionstatechange=()=>{
+    log('RTCState: '+pc.connectionState);
+    if(pc.connectionState==='connected'){
+      setSt('live','🟢 LIVE · '+selectedPos);
+    } else if(['failed','disconnected'].includes(pc.connectionState)){
+      setSt('connecting','RTCหลุด รอ...');
+    }
+  };
+
+  await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
+  const answer=await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  send({type:'answer',to:msg.from,answer});
+  log('✅ ส่ง answer แล้ว');
+}
+
+// ══════════════════════════════════
+//  CONTROLS
+// ══════════════════════════════════
+function setSt(type,text){
+  document.getElementById('st-badge').className='st-badge '+type;
+  document.getElementById('st-txt').textContent=text;
+}
+
+document.getElementById('flip-btn').addEventListener('click',async()=>{
+  facingMode=facingMode==='environment'?'user':'environment';
+  if(!localStream)return;
+  localStream.getTracks().forEach(t=>t.stop());
+  try{
+    localStream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode,width:{ideal:1280},height:{ideal:720}},audio:false
+    });
+    document.getElementById('local-video').srcObject=localStream;
+    if(pc){
+      const sender=pc.getSenders().find(s=>s.track?.kind==='video');
+      if(sender)sender.replaceTrack(localStream.getVideoTracks()[0]);
+    }
+    log('🔄 สลับเป็น '+facingMode);
+  }catch(e){log('❌ สลับไม่ได้: '+e.message)}
+});
+
+document.getElementById('stop-btn').addEventListener('click',()=>{
+  clearTimeout(reconnectTimer);
+  if(localStream)localStream.getTracks().forEach(t=>t.stop());
+  if(pc)pc.close();
+  if(ws)ws.close();
+  document.getElementById('cam-screen').style.display='none';
+  document.getElementById('setup').style.display='flex';
+  logLines=[];
+});
+
+document.getElementById('copy-btn').addEventListener('click',()=>{
+  const val=document.getElementById('pid-val').textContent;
+  navigator.clipboard?.writeText(val).then(()=>{
+    document.getElementById('copy-btn').textContent='✓ OK';
+    setTimeout(()=>document.getElementById('copy-btn').textContent='คัดลอก',1500);
+  }).catch(()=>prompt('Server:',val));
+});
+
+// Prevent scroll/pull-to-refresh
+document.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
+document.addEventListener('touchstart',e=>{if(e.touches.length>1)e.preventDefault()},{passive:false});
+</script>
+</body>
+</html>
